@@ -25,6 +25,25 @@ class Kernmark {
         if (this.adapter === null || this.device === null) return;
         // Create compute pipeline
         const computePipeline = this.createPipeline();
+        // Setup device buffers
+        const N = 10^5;
+        const bufferSize = N * Float32Array.BYTES_PER_ELEMENT;
+        const bufferA = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+        const bufferB = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        });
+        const bufferC = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+        });
+
+        // Create data and copy to buffers
+        
+        
         const kernel = `
             @binding(0) @group(0) var<storage, read> a : array<u32>;
             @binding(1) @group(0) var<storage, read> b : array<u32>;
