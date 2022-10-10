@@ -5,24 +5,37 @@ class Kernmark {
         this.device = null;
     }
     async initializeGPU() {
-        console.log("Initializing WebGPU...");
+        console.log("Initializing Kernmark...");
         if (!navigator.gpu) {
             alert("ERROR: WebGPU not enabled!");
             return;
         }
         this.adapter = await navigator.gpu.requestAdapter();
         this.device = await this.adapter.requestDevice();
+        if (this.adapter && this.device) console.log("Kernmark initialized!");
+        else console.log("Error initializing Kernmark!");
     }
-    async runVectorAdd() {
+    async runVectorAdd(N=10**5, MAX_VAL=1024) {
         if (this.adapter === null || this.device === null) {
             console.log("Kernmark not initialized!");
             return; 
         }
 
+        // Use maximum workgroup size available, scale number of workgroups as needed
+        const numWorkgroups = Math.ceil(N / this.device.limits.maxComputeWorkgroupSizeX);
+        const workgroupSize = this.device.limits.maxComputeWorkgroupSizeX;
+        
+        if (numWorkgroups > this.device.limits.maxComputeWorkgroupsPerDimension) {
+            console.log("N too large, max workgroups exceeded!");
+            return;
+        }
+        if ((N * 4) > this.device.limits.maxStorageBufferBindingSize) {
+            console.log("N too large, storage buffer binding size exceeded!")
+            return;
+        }
+
         // Setup device buffers
         console.log("Creating device buffers...");
-        const N = 10**5;
-        const MAX_VAL = 1024;
         const bufferSize = N * Uint32Array.BYTES_PER_ELEMENT;
         const bufferA = this.device.createBuffer({
             size: bufferSize,
@@ -54,7 +67,7 @@ class Kernmark {
             @binding(0) @group(0) var<storage, read> a : array<u32>;
             @binding(1) @group(0) var<storage, read> b : array<u32>;
             @binding(2) @group(0) var<storage, read_write> c : array<u32>;
-            @compute @workgroup_size(64)
+            @compute @workgroup_size(${workgroupSize})
             fn main(@builtin(global_invocation_id) giid : vec3<u32>) {
                 c[giid.x] = a[giid.x] + b[giid.x];
             }
@@ -111,7 +124,7 @@ class Kernmark {
         const computePassEncoder = commandEncoder.beginComputePass();
         computePassEncoder.setPipeline(pipeline);
         computePassEncoder.setBindGroup(0, bindGroup);
-        computePassEncoder.dispatchWorkgroups(Math.ceil(a.length / 64));
+        computePassEncoder.dispatchWorkgroups(numWorkgroups);
         computePassEncoder.end();
         commandEncoder.copyBufferToBuffer(bufferC, 0, bufferMap, 0, bufferSize);
         this.device.queue.submit([commandEncoder.finish()]);
@@ -134,4 +147,6 @@ class Kernmark {
 }
 const kernmark = new Kernmark();
 
-document.addEventListener("DOMContentLoaded", kernmark.initializeGPU);
+document.addEventListener("DOMContentLoaded", () => {
+    kernmark.initializeGPU()
+});
