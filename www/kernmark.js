@@ -14,8 +14,13 @@ class Kernmark {
             powerPreference : "high-performance"
         });
         this.device = await this.adapter.requestDevice();
-        if (this.adapter && this.device) console.log("Kernmark initialized!");
-        else console.log("Error initializing Kernmark!");
+        const adapterInfo = await this.adapter.requestAdapterInfo();
+        
+        document.getElementById("adapter-device").innerHTML = (adapterInfo.device) ? adapterInfo.device : "Unknown";
+        document.getElementById("adapter-desc").innerHTML =  (adapterInfo.description) ? adapterInfo.description : "Unknown";
+        document.getElementById("adapter-arch").innerHTML = (adapterInfo.architecture) ? adapterInfo.architecture : "Unknown";
+        document.getElementById("adapter-vendor").innerHTML = (adapterInfo.vendor) ? adapterInfo.vendor : "Unknown";
+        document.getElementById("initialized").innerHTML = (this.adapter && this.device) ? "Initialized." : "Error initializing!";
     }
     async runVectorAdd(N=10**5, MAX_VAL=1024) {
         if (this.adapter === null || this.device === null) {
