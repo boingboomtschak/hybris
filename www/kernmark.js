@@ -6,11 +6,13 @@ class Kernmark {
     }
     async initializeGPU() {
         console.log("Initializing Kernmark...");
-        if (!navigator.gpu) {
+        if (!("gpu" in navigator)) {
             alert("ERROR: WebGPU not enabled!");
             return;
         }
-        this.adapter = await navigator.gpu.requestAdapter();
+        this.adapter = await navigator.gpu.requestAdapter({
+            powerPreference : "high-performance"
+        });
         this.device = await this.adapter.requestDevice();
         if (this.adapter && this.device) console.log("Kernmark initialized!");
         else console.log("Error initializing Kernmark!");
