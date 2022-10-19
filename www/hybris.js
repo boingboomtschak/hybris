@@ -1,11 +1,11 @@
 
-class Kernmark {
+class Hybris {
     constructor() {
         this.adapter = null;
         this.device = null;
     }
     async initializeGPU() {
-        console.log("Initializing Kernmark...");
+        console.log("Initializing Hybris...");
         if (!("gpu" in navigator)) {
             alert("ERROR: WebGPU not enabled!");
             return;
@@ -24,7 +24,7 @@ class Kernmark {
     }
     async runVectorAdd(N=10**5, MAX_VAL=1024) {
         if (this.adapter === null || this.device === null) {
-            console.log("Kernmark not initialized!");
+            console.log("Hybris not initialized!");
             return; 
         }
 
@@ -152,8 +152,8 @@ class Kernmark {
             console.log(`${N} results checked, incorrect!`);
     }
 }
-const kernmark = new Kernmark();
+const hybris = new Hybris();
 
 document.addEventListener("DOMContentLoaded", () => {
-    kernmark.initializeGPU()
+    hybris.initializeGPU()
 });
