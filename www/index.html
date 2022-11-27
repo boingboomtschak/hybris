@@ -17,18 +17,64 @@
         <meta name="theme-color" content="#ffffff">
         <!-- rest of head -->
         <title>Hybris</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@6.9.96/css/materialdesignicons.min.css">
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+        <link rel="stylesheet" href="hybris.css">
         <script type="text/javascript" src="hybris.js"></script>
     </head>
     <body>
         <section class="section">
-            <div class="container" width="25%">
-                <h1 class="title">hybris</h1>
-                <b>Status: </b><p id="initialized">...</p>
-                <b>Device: </b><p id="adapter-device">...</p>
-                <b>Description: </b><p id="adapter-desc">...</p>
-                <b>Architecture: </b><p id="adapter-arch">...</p>
-                <b>Vendor: </b><p id="adapter-vendor">...</p>
+            <h1 class="title is-2">hybris</h1>
+            <div class="columns">
+                <div class="column is-3">
+                    <nav class="panel">
+                        <p class="panel-heading">Benchmarks</p>
+                        <p class="panel-tabs">
+                            <a class="is-active">All</a>
+                            <a>Rodinia</a>
+                        </p>
+                        <a class="panel-block" id="bm-vector-add">
+                            <span class="panel-icon"><i class="mdi mdi-help" aria-hidden="true"></i></span>
+                            vector-add
+                        </a>
+                        <a class="panel-block" id="bm-bfs">
+                            <span class="panel-icon"><i class="mdi mdi-alpha-r-circle-outline" aria-hidden="true"></i></span>
+                            bfs
+                        </a>
+                        <a class="panel-block" id="bm-gaussian">
+                            <span class="panel-icon"><i class="mdi mdi-alpha-r-circle-outline" aria-hidden="true"></i></span>
+                            gaussian
+                        </a>
+                        <a class="panel-block" id="bm-particlefilter">
+                            <span class="panel-icon"><i class="mdi mdi-alpha-r-circle-outline" aria-hidden="true"></i></span>
+                            particlefilter
+                        </a>
+                    </nav>
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">Info</p>
+                        </header>
+                        <div class="card-content">
+                            <table class="table">
+                                <tbody>
+                                    <tr><th>Status</th><td id="status">...</td></tr>
+                                    <tr><th>Device</th><td id="adapter-device">...</td></tr>
+                                    <tr><th>Description</th><td id="adapter-desc">...</td></tr>
+                                    <tr><th>Architecture</th><td id="adapter-arch">...</td></tr>
+                                    <tr><th>Vendor</th><td id="adapter-vendor">...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+           
+                </div>
+                <div class="column">
+                    <h1 class="title is-5">Console</h1>
+                    <div style="height: 100%; position:relative;">
+                        <textarea class="textarea has-fixed-size console" id="console" readonly></textarea>
+                        <button class="delete console-delete" id="console-clear"></button>
+                    </div>
+                </div>
             </div>
         </section>
 </html>

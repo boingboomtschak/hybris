@@ -20,7 +20,9 @@ class Hybris {
         document.getElementById("adapter-desc").innerHTML =  (adapterInfo.description) ? adapterInfo.description : "Unknown";
         document.getElementById("adapter-arch").innerHTML = (adapterInfo.architecture) ? adapterInfo.architecture : "Unknown";
         document.getElementById("adapter-vendor").innerHTML = (adapterInfo.vendor) ? adapterInfo.vendor : "Unknown";
-        document.getElementById("initialized").innerHTML = (this.adapter && this.device) ? "Initialized." : "Error initializing!";
+        document.getElementById("status").innerHTML = (this.adapter && this.device) ? "Initialized" : "Error initializing!";
+        console.log("Initialized!");
+        console.log("----------------");
     }
     async runVectorAdd(N=10**5, MAX_VAL=1024) {
         if (this.adapter === null || this.device === null) {
@@ -151,9 +153,61 @@ class Hybris {
         else
             console.log(`${N} results checked, incorrect!`);
     }
+    async runBenchmark(benchmark) {
+        console.log(`Running ${benchmark}...`);
+        switch(benchmark) {
+            case "vector-add": await this.runVectorAdd(); break;
+            case "bfs": console.log("Not yet implemented!"); break;
+            case "gaussian": console.log("Not yet implemented!"); break;
+            case "particlefilter": console.log("Not yet implemented!"); break;
+            default: console.log("Unknown benchmark!"); break;
+        }
+        console.log(`Finished ${benchmark}`);
+        console.log("----------------");
+    }
 }
+
+class Console {
+    constructor() {
+        this.textarea = null;
+    }
+    getTextarea(element) {
+        if (!element) return;
+        this.textarea = element;
+    }
+    write(content) {
+        if (!this.textarea) return;
+        if (typeof content === 'string') 
+            this.textarea.value += (this.textarea.value == "" ? "" : "\n") + content;
+        else
+            this.textarea.value += (this.textarea.value == "" ? "" : "\n") + `${JSON.stringify(content)}`;
+        
+        this.textarea.scrollTop = this.textarea.scrollHeight;
+    }
+    clear() { 
+        if (!this.textarea) return;
+        this.textarea.value = ""; 
+    }
+}
+
 const hybris = new Hybris();
+const hConsole = new Console();
 
 document.addEventListener("DOMContentLoaded", () => {
-    hybris.initializeGPU()
+    hConsole.getTextarea(document.getElementById('console'));
+    document.getElementById("console-clear").onclick = () => { hConsole.clear() };
+    document.getElementById("bm-vector-add").onclick = () => { hybris.runBenchmark("vector-add"); }
+    document.querySelectorAll('[id^=bm]').forEach((bm) => {
+        bm.onclick = () => { hybris.runBenchmark(bm.id.slice(3)); }
+    });
+    (()=>{
+        const console_log = window.console.log;
+        window.console.log = function(...args) {
+            console_log(...args);
+            args.forEach((a) => hConsole.write(a));
+        }
+    })();
+    hybris.initializeGPU();
 });
+
+

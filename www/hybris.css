@@ -1,0 +1,13 @@
+.console { 
+    background-color: black;
+    color: white;
+    font-family: monospace;
+    font-size: .65rem;
+    height: 100%;
+}
+
+.console-delete {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+}
