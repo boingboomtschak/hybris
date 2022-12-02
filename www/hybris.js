@@ -167,14 +167,14 @@ class Hybris {
             return; 
         }
 
-        const MAX_THREADS_PER_BLOCK = 256;
+        const MAX_THREADS_PER_BLOCK = this.device.limits.maxComputeWorkgroupSizeX;
         let no_of_nodes = 0;
         let edge_list_size = 0;
         let source = 0;
 
         console.log("Retrieving and processing data/graph65536...");   
         const t_init = window.performance.now();
-        const response = await fetch('/data/graph65536.txt');
+        const response = await fetch('data/graph65536.txt');
         const t_fetch = window.performance.now();
         console.log(`Retrieved data in ${this.getTimeDiff(t_init, t_fetch)}`);
         let text = await response.text();
@@ -373,7 +373,8 @@ class Hybris {
             ]
         });
 
-        console.log("Running kernels...");
+        console.log(`Dispatching ${num_of_blocks} workgroups of size ${num_of_threads_per_block}`);
+
         let k = 0;
         const t_prekernel = window.performance.now();
         do {
@@ -408,6 +409,8 @@ class Hybris {
         } while (stop);
         const t_postkernel = window.performance.now();
         console.log(`Ran kernels ${k} times in ${this.getTimeDiff(t_prekernel, t_postkernel)}`);
+
+        // write result to result file
     }
     async runBenchmark(benchmark) {
         console.log(`Running ${benchmark}...`);
