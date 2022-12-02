@@ -25,12 +25,12 @@ class Hybris {
         console.log("Initialized!");
         console.log("----------------");
     }
-    async runVectorAdd(N=10**5, MAX_VAL=1024) {
+    async runVectorAdd(N=10**6, MAX_VAL=1024) {
         if (this.adapter === null || this.device === null) {
             console.log("Hybris not initialized!");
             return; 
         }
-
+        
         // Use maximum workgroup size available, scale number of workgroups as needed
         const numWorkgroups = Math.ceil(N / this.device.limits.maxComputeWorkgroupSizeX);
         const workgroupSize = this.device.limits.maxComputeWorkgroupSizeX;
@@ -45,7 +45,7 @@ class Hybris {
         }
 
         // Setup device buffers
-        console.log("Creating device buffers...");
+        const t_init = window.performance.now();
         const bufferSize = N * Uint32Array.BYTES_PER_ELEMENT;
         const bufferA = this.device.createBuffer({
             size: bufferSize,
@@ -59,9 +59,10 @@ class Hybris {
             size: bufferSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         });
+        const t_devbuf = window.performance.now();
+        console.log(`Created device buffers in ${this.getTimeDiff(t_init, t_devbuf)}`);
 
         // Create data and copy to buffers
-        console.log("Creating local arrays and copying to buffers...");
         const a = new Uint32Array(N);
         const b = new Uint32Array(N);
         for (let i = 0; i < N; i++) {
@@ -70,9 +71,10 @@ class Hybris {
         }
         this.device.queue.writeBuffer(bufferA, 0, a);
         this.device.queue.writeBuffer(bufferB, 0, b);
+        const t_bufcopy = window.performance.now();
+        console.log(`Created local arrays and copied to buffers in ${this.getTimeDiff(t_devbuf, t_bufcopy)}`);
 
         // Create compute pipeline
-        console.log("Creating compute pipeline...");
         const kernel = `
             @binding(0) @group(0) var<storage, read> a : array<u32>;
             @binding(1) @group(0) var<storage, read> b : array<u32>;
@@ -89,9 +91,10 @@ class Hybris {
                 entryPoint: 'main'
             }
         });
+        const t_pipeline = window.performance.now();
+        console.log(`Created compute pipeline in ${this.getTimeDiff(t_bufcopy, t_pipeline)}`);
 
         // Create binding group
-        console.log("Creating binding group...");
         const bindGroup = this.device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
             entries: [
@@ -121,15 +124,16 @@ class Hybris {
                 }
             ]
         });
+        const t_bindinggroup = window.performance.now();
+        console.log(`Created binding group in ${this.getTimeDiff(t_pipeline, t_bindinggroup)}`);
 
-        // Create temp buffer to map and read results
+        // Create temp buffer to map
         const bufferMap = this.device.createBuffer({
             size: bufferSize,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
         });
 
         // Dispatch kernel and copy bufferC to bufferMap
-        console.log("Dispatching kernel and copying result buffer...");
         const commandEncoder = this.device.createCommandEncoder();
         const computePassEncoder = commandEncoder.beginComputePass();
         computePassEncoder.setPipeline(pipeline);
@@ -138,9 +142,10 @@ class Hybris {
         computePassEncoder.end();
         commandEncoder.copyBufferToBuffer(bufferC, 0, bufferMap, 0, bufferSize);
         this.device.queue.submit([commandEncoder.finish()]);
+        const t_queue_submit = window.performance.now();
+        console.log(`Dispatched kernel and copied result buffer in ${this.getTimeDiff(t_bindinggroup, t_queue_submit)}`);
 
         // Map buffer C and check results
-        console.log("Mapping buffer and checking results...");
         await bufferMap.mapAsync(GPUMapMode.READ, 0, bufferSize);
         const mapped = new Uint32Array(bufferMap.getMappedRange());
         let incorrect = false;
@@ -148,6 +153,8 @@ class Hybris {
             if (mapped[i] != MAX_VAL) 
                 incorrect = true;
         bufferMap.unmap();
+        let t_check = window.performance.now();
+        console.log(`Checked results in ${this.getTimeDiff(t_queue_submit, t_check)}`);
 
         if (!incorrect)
             console.log(`${N} results checked, correct!`);
@@ -166,43 +173,51 @@ class Hybris {
         let source = 0;
 
         console.log("Retrieving and processing data/graph65536...");   
+        const t_init = window.performance.now();
         const response = await fetch('/data/graph65536.txt');
+        const t_fetch = window.performance.now();
+        console.log(`Retrieved data in ${this.getTimeDiff(t_init, t_fetch)}`);
         let text = await response.text();
         text = text.split(/\r?\n/);
+        text = text.reverse();
 
         // Reading graph nodes and setting up graph mask/visited arrays
-        no_of_nodes = parseInt(text.shift());
+        no_of_nodes = parseInt(text.pop());
         const h_graph_nodes_starting = new Uint32Array(no_of_nodes);
         const h_graph_nodes_no_of_edges = new Uint32Array(no_of_nodes);
         const h_graph_mask = new Uint8Array(no_of_nodes);
         const h_updating_graph_mask = new Uint8Array(no_of_nodes);
         const h_graph_visited = new Uint8Array(no_of_nodes);
         for (let i = 0; i < no_of_nodes; i++) {
-            let line = text.shift().split(" ");
+            let line = text.pop().split(" ");
             h_graph_nodes_starting[i] = line[0];
             h_graph_nodes_no_of_edges[i] = line[1];
             h_graph_mask[i] = 0;
             h_updating_graph_mask[i] = 0;
             h_graph_visited[i] = 0;
         }
+        const t_nodes = window.performance.now();
+        console.log(`Processed nodes in ${this.getTimeDiff(t_fetch, t_nodes)}`);
         
         // Reading graph source
-        text.shift();
-        let source_line = text.shift();
+        text.pop();
+        let source_line = text.pop();
         source = (isNaN(source_line)) ? source : parseInt(source_line);
         
         // Reading graph edge list size
-        text.shift();
-        let edge_list_size_line = text.shift();
+        text.pop();
+        let edge_list_size_line = text.pop();
         edge_list_size = (isNaN(edge_list_size_line)) ? edge_list_size : parseInt(edge_list_size_line);
         
         // Reading graph edges
         let h_graph_edges = new Uint32Array(edge_list_size);
         for (let i = 0; i < edge_list_size; i++) {
-            let line = text.shift().split(" ");
+            let line = text.pop().split(" ");
             h_graph_edges[i] = line[0];
         }
-        console.log("Processed data/graph65536.");
+        const t_edges = window.performance.now();
+        console.log(`Processed edges in ${this.getTimeDiff(t_nodes, t_edges)}`);
+        console.log(`Processed data/graph65536 in ${this.getTimeDiff(t_init, t_edges)}`);
 
         let num_of_blocks = 1;
         let num_of_threads_per_block = no_of_nodes;
@@ -215,7 +230,6 @@ class Hybris {
         h_graph_visited[source] = 1;
 
         // Creating device buffers
-        console.log("Creating buffers for graph and copying to device memory...");
         const d_graph_nodes_starting = this.device.createBuffer({
             size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
@@ -235,7 +249,7 @@ class Hybris {
             size: no_of_nodes*Uint8Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
-        this.device.queue.writeBuffeR(d_graph_mask, 0, h_graph_mask);
+        this.device.queue.writeBuffer(d_graph_mask, 0, h_graph_mask);
         const d_updating_graph_mask = this.device.createBuffer({
             size: no_of_nodes*Uint8Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
@@ -246,9 +260,11 @@ class Hybris {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
         this.device.queue.writeBuffer(d_graph_visited, 0, h_graph_visited);
+        const t_graph_bufs = window.performance.now();
+        console.log(`Created buffers for graph and copied to device memory in ${this.getTimeDiff(t_edges, t_graph_bufs)}`);
+
 
         // Create host and device buffer for result
-        console.log("Creating host and device memory for result...");
         const h_cost = new Uint32Array(no_of_nodes);
         for (let i = 0; i < no_of_nodes; i++) 
             h_cost[i] = -1;
@@ -262,6 +278,8 @@ class Hybris {
             size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
         });
+        const t_result_mem = window.performance.now();
+        console.log(`Created host and device memory for result in ${this.getTimeDiff(t_graph_bufs, t_result_mem)}`);
 
         // Set up buffer(s) for stop/d_over 
 
@@ -291,6 +309,10 @@ class Hybris {
         }
         console.log(`Finished ${benchmark}.`);
         console.log("----------------");
+    }
+    getTimeDiff(t_start, t_end) {
+        const diff = t_end - t_start;
+        return (diff > 1000) ? `${(diff / 1000).toFixed(3)} s` : `${diff.toFixed(3)} ms`;
     }
 }
 
