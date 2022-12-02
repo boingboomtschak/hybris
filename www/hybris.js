@@ -127,7 +127,7 @@ class Hybris {
         const t_bindinggroup = window.performance.now();
         console.log(`Created binding group in ${this.getTimeDiff(t_pipeline, t_bindinggroup)}`);
 
-        // Create temp buffer to map
+        // Create temp buffer to map results
         const bufferMap = this.device.createBuffer({
             size: bufferSize,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
@@ -167,7 +167,7 @@ class Hybris {
             return; 
         }
 
-        const MAX_THREADS_PER_BLOCK = 512;
+        const MAX_THREADS_PER_BLOCK = 256;
         let no_of_nodes = 0;
         let edge_list_size = 0;
         let source = 0;
@@ -246,17 +246,17 @@ class Hybris {
         });
         this.device.queue.writeBuffer(d_graph_edges, 0, h_graph_edges);
         const d_graph_mask = this.device.createBuffer({
-            size: no_of_nodes*Uint8Array.BYTES_PER_ELEMENT,
+            size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
         this.device.queue.writeBuffer(d_graph_mask, 0, h_graph_mask);
         const d_updating_graph_mask = this.device.createBuffer({
-            size: no_of_nodes*Uint8Array.BYTES_PER_ELEMENT,
+            size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
         this.device.queue.writeBuffer(d_updating_graph_mask, 0, h_updating_graph_mask);
         const d_graph_visited = this.device.createBuffer({
-            size: no_of_nodes*Uint8Array.BYTES_PER_ELEMENT,
+            size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
         this.device.queue.writeBuffer(d_graph_visited, 0, h_graph_visited);
@@ -281,22 +281,133 @@ class Hybris {
         const t_result_mem = window.performance.now();
         console.log(`Created host and device memory for result in ${this.getTimeDiff(t_graph_bufs, t_result_mem)}`);
 
-        // Set up buffer(s) for stop/d_over 
+        // Set up buffer(s) for stop/d_stop
+        const h_stop = new Uint32Array(1);
+        h_stop[0] = 0;
+        const d_stop = this.device.createBuffer({
+            size: Uint32Array.BYTES_PER_ELEMENT,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+        });
+        this.device.queue.writeBuffer(d_stop, 0, h_stop);
+        const d_stop_map = this.device.createBuffer({
+            size: Uint32Array.BYTES_PER_ELEMENT,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
 
         // Create pipeline/binding group layout/kernel
 
+        const kernel = `
+            @binding(0) @group(0) var<storage, read> g_graph_nodes_starting : array<u32>;
+            @binding(1) @group(0) var<storage, read> g_graph_nodes_no_of_edges : array<u32>;
+            @binding(2) @group(0) var<storage, read> g_graph_edges : array<u32>;
+            @binding(3) @group(0) var<storage, read_write> g_graph_mask : array<u32>;
+            @binding(4) @group(0) var<storage, read_write> g_updating_graph_mask : array<u32>;
+            @binding(5) @group(0) var<storage, read> g_graph_visited : array<u32>;
+            @binding(6) @group(0) var<storage, read_write> g_cost : array<u32>;
+            @compute @workgroup_size(${num_of_threads_per_block})
+            fn main(@builtin(workgroup_id) wg_id : vec3<u32>, @builtin(local_invocation_id) liid : vec3<u32>) {
+                var tid : u32 = wg_id.x * ${MAX_THREADS_PER_BLOCK} + liid.x;
+                if (tid < ${no_of_nodes} && g_graph_mask[tid] == 1) {
+                    g_graph_mask[tid] = 0;
+                    for (var i : u32 = g_graph_nodes_starting[tid]; i < (g_graph_nodes_no_of_edges[tid] + g_graph_nodes_starting[tid]); i++) {
+                        var id : u32 = g_graph_edges[i];
+                        if (g_graph_visited[id] == 0) {
+                            g_cost[id] = g_cost[tid] + 1;
+                            g_updating_graph_mask[id] = 1;
+                        }
+                    }
+                }
+            }
+        `;
+
+        const kernel2 = `
+            @binding(0) @group(0) var<storage, read_write> g_updating_graph_mask : array<u32>;
+            @binding(1) @group(0) var<storage, read_write> g_graph_mask : array<u32>;
+            @binding(2) @group(0) var<storage, read_write> g_graph_visited : array<u32>;
+            @binding(3) @group(0) var<storage, read_write> g_stop : array<u32>;
+            @compute @workgroup_size(${num_of_threads_per_block})
+            fn main(@builtin(workgroup_id) wg_id : vec3<u32>, @builtin(local_invocation_id) liid : vec3<u32>) {
+                var tid : u32 = wg_id.x * ${MAX_THREADS_PER_BLOCK} + liid.x;
+                if (tid < ${no_of_nodes} && g_updating_graph_mask[tid] == 1) {
+                    g_graph_mask[tid] = 1;
+                    g_graph_visited[tid] = 1;
+                    g_stop[0] = 1;
+                    g_updating_graph_mask[tid] = 0;
+                }
+            }
+        `;
+        const kernelPipeline = this.device.createComputePipeline({
+            layout: 'auto',
+            compute: {
+                module: this.device.createShaderModule({ code: kernel }),
+                entryPoint: 'main'
+            }
+        });
+        const kernel2Pipeline = this.device.createComputePipeline({
+            layout: 'auto',
+            compute: {
+                module: this.device.createShaderModule({ code: kernel2 }),
+                entryPoint: 'main'
+            }
+        });
+
+        const kernelBindGroup = this.device.createBindGroup({
+            layout: kernelPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: d_graph_nodes_starting, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 1, resource: { buffer: d_graph_nodes_no_of_edges, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 2, resource: { buffer: d_graph_edges, offset: 0, size: edge_list_size*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 3, resource: { buffer: d_graph_mask, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 4, resource: { buffer: d_updating_graph_mask, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 5, resource: { buffer: d_graph_visited, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 6, resource: { buffer: d_cost, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } }
+            ]
+        });
+        const kernel2BindGroup = this.device.createBindGroup({
+            layout: kernel2Pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: d_updating_graph_mask, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 1, resource: { buffer: d_graph_mask, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 2, resource: { buffer: d_graph_visited, offset: 0, size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT } },
+                { binding: 3, resource: { buffer: d_stop, offset: 0, size: Uint32Array.BYTES_PER_ELEMENT } }
+            ]
+        });
+
         console.log("Running kernels...");
-        let stop;
+        let k = 0;
+        const t_prekernel = window.performance.now();
         do {
             stop = false;
-            
+            // copy stop to d_stop
+            h_stop[0] = (stop) ? 1 : 0;
+            this.device.queue.writeBuffer(d_stop, 0, h_stop);
+
             const commandEncoder = this.device.createCommandEncoder();
-            const computePassEncoder = commandEncoder.beginComputePass();
             // dispatch kernels
-            computePassEncoder.end();
+            const kernelPass = commandEncoder.beginComputePass();
+            kernelPass.setPipeline(kernelPipeline);
+            kernelPass.setBindGroup(0, kernelBindGroup);
+            kernelPass.dispatchWorkgroups(num_of_blocks);
+            kernelPass.end()
+            const kernel2Pass = commandEncoder.beginComputePass();
+            kernel2Pass.setPipeline(kernel2Pipeline);
+            kernel2Pass.setBindGroup(0, kernel2BindGroup);
+            kernel2Pass.dispatchWorkgroups(num_of_blocks);
+            kernel2Pass.end();
+            // copy d_stop to d_stop_map
+            commandEncoder.copyBufferToBuffer(d_stop, 0, d_stop_map, 0, Uint32Array.BYTES_PER_ELEMENT);
             this.device.queue.submit([commandEncoder.finish()]);
 
+            // map d_stop_map, read val
+            await d_stop_map.mapAsync(GPUMapMode.READ, 0, Uint32Array.BYTES_PER_ELEMENT);
+            const mapped = new Uint32Array(d_stop_map.getMappedRange());
+            stop = mapped[0] == 1 ? true : false;
+            d_stop_map.unmap();
+
+            k++;
         } while (stop);
+        const t_postkernel = window.performance.now();
+        console.log(`Ran kernels ${k} times in ${this.getTimeDiff(t_prekernel, t_postkernel)}`);
     }
     async runBenchmark(benchmark) {
         console.log(`Running ${benchmark}...`);
