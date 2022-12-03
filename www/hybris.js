@@ -3,6 +3,7 @@ class Hybris {
     constructor() {
         this.adapter = null;
         this.device = null;
+        this.data = { bfs: {} };
     }
     async initializeGPU() {
         console.log("Initializing Hybris...");
@@ -149,12 +150,21 @@ class Hybris {
         let source = 0;
 
         const t_init = window.performance.now();
-        const response = await fetch(data);
-        let text = await response.text();
+
+        let text;
+        if (data in this.data.bfs) {
+            text = this.data.bfs[data];
+        } else {
+            const response = await fetch(data);
+            text = await response.text();
+            this.data.bfs[data] = text;
+            const t_fetch = window.performance.now();
+            console.log(`Retrieved ${data} in ${this.getTimeDiff(t_init, t_fetch)}`);
+        }
         text = text.split(/[\r\n ]+/);
         text = text.reverse();
         const t_parsed = window.performance.now();
-        console.log(`Retrieved and parsed ${data} in ${this.getTimeDiff(t_init, t_parsed)}`);
+        console.log(`Parsed ${data} in ${this.getTimeDiff(t_init, t_parsed)}`);
 
         // Reading graph nodes and setting up graph mask/visited arrays
         no_of_nodes = parseInt(text.pop());
@@ -406,7 +416,7 @@ class Hybris {
             console.log(`Checked results in ${this.getTimeDiff(t_postkernel, t_check)}, all correct!`);
         else
             console.log('Results incorrect!');
-        
+        console.log(`Total execution time took ${this.getTimeDiff(t_init, t_check)}`);
     }
     // Debug, from https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server
     download(filename, text) {
