@@ -3,7 +3,6 @@ class Hybris {
     constructor() {
         this.adapter = null;
         this.device = null;
-        this.bfsGraph = null;
     }
     async initializeGPU() {
         console.log("Initializing Hybris...");
@@ -59,8 +58,6 @@ class Hybris {
             size: bufferSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         });
-        const t_devbuf = window.performance.now();
-        console.log(`Created device buffers in ${this.getTimeDiff(t_init, t_devbuf)}`);
 
         // Create data and copy to buffers
         const a = new Uint32Array(N);
@@ -71,8 +68,15 @@ class Hybris {
         }
         this.device.queue.writeBuffer(bufferA, 0, a);
         this.device.queue.writeBuffer(bufferB, 0, b);
+
+        // Create temp buffer to map results
+        const bufferMap = this.device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
+
         const t_bufcopy = window.performance.now();
-        console.log(`Created local arrays and copied to buffers in ${this.getTimeDiff(t_devbuf, t_bufcopy)}`);
+        console.log(`Created input arrays and copied to buffers in ${this.getTimeDiff(t_init, t_bufcopy)}`);
 
         // Create compute pipeline
         const kernel = `
@@ -91,47 +95,19 @@ class Hybris {
                 entryPoint: 'main'
             }
         });
-        const t_pipeline = window.performance.now();
-        console.log(`Created compute pipeline in ${this.getTimeDiff(t_bufcopy, t_pipeline)}`);
 
         // Create binding group
         const bindGroup = this.device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
             entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: bufferA,
-                        offset: 0,
-                        size: bufferSize
-                    }
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: bufferB,
-                        offset: 0,
-                        size: bufferSize
-                    }
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: bufferC,
-                        offset: 0,
-                        size: bufferSize
-                    }
-                }
+                { binding: 0, resource: { buffer: bufferA, offset: 0, size: bufferSize } },
+                { binding: 1, resource: { buffer: bufferB, offset: 0, size: bufferSize } },
+                { binding: 2, resource: { buffer: bufferC, offset: 0, size: bufferSize } }
             ]
         });
-        const t_bindinggroup = window.performance.now();
-        console.log(`Created binding group in ${this.getTimeDiff(t_pipeline, t_bindinggroup)}`);
 
-        // Create temp buffer to map results
-        const bufferMap = this.device.createBuffer({
-            size: bufferSize,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-        });
+        const t_kernel_setup = window.performance.now();
+        console.log(`Set up pipeline and kernel in ${this.getTimeDiff(t_bufcopy, t_kernel_setup)}`);
 
         // Dispatch kernel and copy bufferC to bufferMap
         const commandEncoder = this.device.createCommandEncoder();
@@ -143,7 +119,7 @@ class Hybris {
         commandEncoder.copyBufferToBuffer(bufferC, 0, bufferMap, 0, bufferSize);
         this.device.queue.submit([commandEncoder.finish()]);
         const t_queue_submit = window.performance.now();
-        console.log(`Dispatched kernel and copied result buffer in ${this.getTimeDiff(t_bindinggroup, t_queue_submit)}`);
+        console.log(`Dispatched kernel and copied result buffer in ${this.getTimeDiff(t_kernel_setup, t_queue_submit)}`);
 
         // Map buffer C and check results
         await bufferMap.mapAsync(GPUMapMode.READ, 0, bufferSize);
@@ -161,7 +137,7 @@ class Hybris {
         else
             console.log(`${N} results checked, incorrect!`);
     }
-    async runBFS() {
+    async runBFS(data='data/bfs/graph1MW_6.txt') {
         if (this.adapter === null || this.device === null) {
             console.log("Hybris not initialized!");
             return; 
@@ -172,14 +148,13 @@ class Hybris {
         let edge_list_size = 0;
         let source = 0;
 
-        console.log("Retrieving and processing data/graph65536...");   
         const t_init = window.performance.now();
-        const response = await fetch('data/graph65536.txt');
-        const t_fetch = window.performance.now();
-        console.log(`Retrieved data in ${this.getTimeDiff(t_init, t_fetch)}`);
+        const response = await fetch(data);
         let text = await response.text();
-        text = text.split(/\r?\n/);
+        text = text.split(/[\r\n ]+/);
         text = text.reverse();
+        const t_parsed = window.performance.now();
+        console.log(`Retrieved and parsed ${data} in ${this.getTimeDiff(t_init, t_parsed)}`);
 
         // Reading graph nodes and setting up graph mask/visited arrays
         no_of_nodes = parseInt(text.pop());
@@ -189,35 +164,33 @@ class Hybris {
         const h_updating_graph_mask = new Uint8Array(no_of_nodes);
         const h_graph_visited = new Uint8Array(no_of_nodes);
         for (let i = 0; i < no_of_nodes; i++) {
-            let line = text.pop().split(" ");
-            h_graph_nodes_starting[i] = line[0];
-            h_graph_nodes_no_of_edges[i] = line[1];
+            h_graph_nodes_starting[i] = text.pop();
+            h_graph_nodes_no_of_edges[i] = text.pop();
             h_graph_mask[i] = 0;
             h_updating_graph_mask[i] = 0;
             h_graph_visited[i] = 0;
         }
         const t_nodes = window.performance.now();
-        console.log(`Processed nodes in ${this.getTimeDiff(t_fetch, t_nodes)}`);
+        console.log(`Processed ${no_of_nodes} nodes in ${this.getTimeDiff(t_parsed, t_nodes)}`);
         
         // Reading graph source
-        text.pop();
         let source_line = text.pop();
-        source = (isNaN(source_line)) ? source : parseInt(source_line);
+        // Rodinia bfs does not even read source node from file! Sets to 0 in all cases
+        //source = (isNaN(source_line)) ? source : parseInt(source_line);
+        source = 0;
         
         // Reading graph edge list size
-        text.pop();
         let edge_list_size_line = text.pop();
         edge_list_size = (isNaN(edge_list_size_line)) ? edge_list_size : parseInt(edge_list_size_line);
         
         // Reading graph edges
         let h_graph_edges = new Uint32Array(edge_list_size);
         for (let i = 0; i < edge_list_size; i++) {
-            let line = text.pop().split(" ");
-            h_graph_edges[i] = line[0];
+            h_graph_edges[i] = text.pop();
+            text.pop();
         }
         const t_edges = window.performance.now();
-        console.log(`Processed edges in ${this.getTimeDiff(t_nodes, t_edges)}`);
-        console.log(`Processed data/graph65536 in ${this.getTimeDiff(t_init, t_edges)}`);
+        console.log(`Processed ${edge_list_size} edges in ${this.getTimeDiff(t_nodes, t_edges)}`);
 
         let num_of_blocks = 1;
         let num_of_threads_per_block = no_of_nodes;
@@ -229,7 +202,7 @@ class Hybris {
         h_graph_mask[source] = 1;
         h_graph_visited[source] = 1;
 
-        // Creating device buffers
+        // Creating device buffers for graph
         const d_graph_nodes_starting = this.device.createBuffer({
             size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
@@ -260,9 +233,6 @@ class Hybris {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
         this.device.queue.writeBuffer(d_graph_visited, 0, h_graph_visited);
-        const t_graph_bufs = window.performance.now();
-        console.log(`Created buffers for graph and copied to device memory in ${this.getTimeDiff(t_edges, t_graph_bufs)}`);
-
 
         // Create host and device buffer for result
         const h_cost = new Uint32Array(no_of_nodes);
@@ -278,10 +248,8 @@ class Hybris {
             size: no_of_nodes*Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
         });
-        const t_result_mem = window.performance.now();
-        console.log(`Created host and device memory for result in ${this.getTimeDiff(t_graph_bufs, t_result_mem)}`);
 
-        // Set up buffer(s) for stop/d_stop
+        // Create buffer(s) for stop/d_stop
         const h_stop = new Uint32Array(1);
         h_stop[0] = 0;
         const d_stop = this.device.createBuffer({
@@ -293,6 +261,9 @@ class Hybris {
             size: Uint32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
         });
+
+        const t_h2d = window.performance.now();
+        console.log(`Copied graph data from host to device in ${this.getTimeDiff(t_edges, t_h2d)}`);
 
         // Create pipeline/binding group layout/kernel
 
@@ -373,7 +344,7 @@ class Hybris {
             ]
         });
 
-        console.log(`Dispatching ${num_of_blocks} workgroups of size ${num_of_threads_per_block}`);
+        console.log(`Dispatching ${num_of_blocks} workgroups of size ${num_of_threads_per_block}...`);
 
         let k = 0;
         const t_prekernel = window.performance.now();
@@ -408,9 +379,44 @@ class Hybris {
             k++;
         } while (stop);
         const t_postkernel = window.performance.now();
-        console.log(`Ran kernels ${k} times in ${this.getTimeDiff(t_prekernel, t_postkernel)}`);
+        console.log(`Dispatched kernels ${k} times in ${this.getTimeDiff(t_prekernel, t_postkernel)}`);
+        
+        // Copy cost back, read result file, check results
+        const resultCommandEncoder = this.device.createCommandEncoder();
+        resultCommandEncoder.copyBufferToBuffer(d_cost, 0, d_cost_map, 0, no_of_nodes*Uint32Array.BYTES_PER_ELEMENT);
+        this.device.queue.submit([resultCommandEncoder.finish()]);
 
-        // write result to result file
+        let results = await fetch(`data/bfs/result-${data.split('/').at(-1)}`);
+        results = await results.text();
+        let resultIter = results.matchAll(/[0-9]+\) cost:([0-9]+)\r?\n?/g);
+        
+        let correct = true;
+        await d_cost_map.mapAsync(GPUMapMode.READ, 0, no_of_nodes*Uint32Array.BYTES_PER_ELEMENT);
+        const mapped = new Uint32Array(d_cost_map.getMappedRange());
+        for (let i = 0; i < no_of_nodes; i++) {
+            let r = resultIter.next().value[1];
+            if (mapped[i] != r) {
+                correct = false;
+                break;
+            }
+        }
+        d_cost_map.unmap(); 
+        const t_check = window.performance.now();
+        if (correct)
+            console.log(`Checked results in ${this.getTimeDiff(t_postkernel, t_check)}, all correct!`);
+        else
+            console.log('Results incorrect!');
+        
+    }
+    // Debug, from https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server
+    download(filename, text) {
+        let element = document.createElement('a');
+        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+        element.setAttribute('download', filename);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
     }
     async runBenchmark(benchmark) {
         console.log(`Running ${benchmark}...`);
@@ -426,7 +432,7 @@ class Hybris {
     }
     getTimeDiff(t_start, t_end) {
         const diff = t_end - t_start;
-        return (diff > 1000) ? `${(diff / 1000).toFixed(3)} s` : `${diff.toFixed(3)} ms`;
+        return (diff > 1000) ? `${(diff / 1000).toFixed(3)} s` : `${diff.toFixed(1)} ms`;
     }
 }
 
