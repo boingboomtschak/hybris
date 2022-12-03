@@ -161,10 +161,11 @@ class Hybris {
             const t_fetch = window.performance.now();
             console.log(`Retrieved ${data} in ${this.getTimeDiff(t_init, t_fetch)}`);
         }
+        const t_retrieve = window.performance.now();
         text = text.split(/[\r\n ]+/);
         text = text.reverse();
         const t_parsed = window.performance.now();
-        console.log(`Parsed ${data} in ${this.getTimeDiff(t_init, t_parsed)}`);
+        console.log(`Parsed ${data} in ${this.getTimeDiff(t_retrieve, t_parsed)}`);
 
         // Reading graph nodes and setting up graph mask/visited arrays
         no_of_nodes = parseInt(text.pop());
